@@ -54,6 +54,56 @@ body,
   }
 }
 
+.functions {
+  display: flex;
+  margin-top: 20px;
+
+  .function {
+    display: flex;
+    align-items: center;
+    background-color: rgb(26, 61, 89);
+    padding: 5px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    color: rgba(255, 255, 255, 0.708);
+    transition: 0.2s ease;
+    user-select: none;
+
+    &:hover {
+      transform: scale(1.05);
+      color: white;
+      background-color: rgb(39, 93, 138);
+
+      &.best {
+        background-color: rgb(163, 130, 20);
+        box-shadow: 0 0 20px 2px rgba(255, 255, 0, 0.456);
+      }
+    }
+
+    &:not(:last-child) {
+      margin-right: 10px;
+    }
+
+    &.best {
+      background-color: rgb(72, 72, 23);
+    }
+
+    & > * {
+      display: flex;
+      align-items: center;
+    }
+
+    .icon {
+      margin-right: 5px;
+      font-size: 18px;
+    }
+
+    .name {
+      margin-top: -4px;
+    }
+  }
+}
+
 .team-composition {
   display: flex;
   margin-top: 30px;
@@ -88,6 +138,12 @@ body,
         .masteries {
           display: flex;
           flex-direction: row-reverse;
+
+          .mastery {
+            &:not(:first-child) {
+              margin-right: 5px;
+            }
+          }
         }
 
         &-detail {
@@ -294,6 +350,7 @@ body,
       height: 40px;
       border-radius: 5px;
       overflow: hidden;
+      // box-sizing: border-box;
 
       // border: 3px solid rgb(196, 196, 196);
 
@@ -308,6 +365,11 @@ body,
       // &.level-5 {
       //   border: 3px solid rgb(255, 56, 56);
       // }
+
+      &.best {
+        border: 2px solid rgb(255, 195, 66);
+        box-shadow: 0 0 5px 1px rgb(255, 179, 0);
+      }
 
       img {
         width: 100%;

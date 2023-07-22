@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getLatestDataDragonURL, getSummonerAllInfo } from "./thunks";
-import { IoRemoveCircle } from "react-icons/io5";
+import { IoArrowUp, IoCalculator, IoRemoveCircle, IoShuffle, IoSwapHorizontal } from "react-icons/io5";
 import {
   getTierRankByStrength,
   getTierRankKoreanStringByStrength,
   masteryKoreanPoints,
   tierRankKoreanString,
 } from "./util";
+import PackageJson from "../package.json";
 import axios from "axios";
 
 function App() {
@@ -22,8 +23,6 @@ function App() {
 
   const [ddragonURL, setDdragonURL] = useState("");
   const [championMap, setChampionMap] = useState({});
-
-  console.log(userMap);
 
   const team1Strength = useMemo(() => {
     return Object.keys(team1players).reduce((acc, cur) => {
@@ -89,6 +88,7 @@ function App() {
     if (summonerNameInput === "") return;
     if (Object.keys(userMap).includes(summonerNameInput)) {
       alert("이미 추가된 소환사입니다.");
+      return;
     }
 
     try {
@@ -97,12 +97,23 @@ function App() {
       setPlayerQueue((prev) => ({ ...prev, [res.name]: true }));
       setSummonerNameInput("");
     } catch (err) {
+      alert("그런 이름의 소환사는 없습니다.");
       console.log(err);
     }
   };
 
   const onRemovePlayer = (username) => {
     setUserMap((prev) => {
+      const newMap = { ...prev };
+      delete newMap[username];
+      return newMap;
+    });
+    setTeam1Players((prev) => {
+      const newMap = { ...prev };
+      delete newMap[username];
+      return newMap;
+    });
+    setTeam2Players((prev) => {
       const newMap = { ...prev };
       delete newMap[username];
       return newMap;
@@ -211,6 +222,95 @@ function App() {
     });
   };
 
+  const swapTeams = () => {
+    const newTeam1 = { ...team2players };
+    const newTeam2 = { ...team1players };
+    setTeam1Players(newTeam1);
+    setTeam2Players(newTeam2);
+  };
+
+  const combine10Players = () => {
+    const team1 = { ...team1players };
+    const team2 = { ...team2players };
+    const queue = { ...playerQueue };
+
+    const combined = Object.keys(team1).concat(Object.keys(team2)).concat(Object.keys(queue));
+    combined.sort(() => Math.random() - 0.5);
+
+    const newTeam1 = {};
+    const newTeam2 = {};
+
+    for (let i = 0; i < combined.length && i < 10; i++) {
+      if (i % 2 === 0) {
+        newTeam1[combined[i]] = true;
+      } else {
+        newTeam2[combined[i]] = true;
+      }
+    }
+
+    setTeam1Players(newTeam1);
+    setTeam2Players(newTeam2);
+    setPlayerQueue({});
+  };
+
+  const shufflePlayers = () => {
+    const newTeam1 = { ...team1players };
+    const newTeam2 = { ...team2players };
+
+    const shuffledPlayers = Object.keys(newTeam1).concat(Object.keys(newTeam2));
+    shuffledPlayers.sort(() => Math.random() - 0.5);
+
+    const newTeam1Players = shuffledPlayers.slice(0, Object.keys(newTeam1).length);
+    const newTeam2Players = shuffledPlayers.slice(Object.keys(newTeam1).length);
+
+    console.log(newTeam1Players, newTeam2Players);
+
+    const newTeam1Map = newTeam1Players.reduce((acc, cur) => {
+      acc[cur] = true;
+      return acc;
+    }, {});
+    const newTeam2Map = newTeam2Players.reduce((acc, cur) => {
+      acc[cur] = true;
+      return acc;
+    }, {});
+
+    setTeam1Players(newTeam1Map);
+    setTeam2Players(newTeam2Map);
+  };
+
+  const combinateTeamByStrengthWithBalance = () => {
+    const team1 = { ...team1players };
+    const team2 = { ...team2players };
+    const combined = Object.keys(team1).concat(Object.keys(team2));
+    combined.sort((a, b) => {
+      const userA = userMap[a];
+      const userB = userMap[b];
+      if (userA == null || userB == null) return 0;
+      const userAStrength = userA.getRepresentativeStrength();
+      const userBStrength = userB.getRepresentativeStrength();
+      if (userAStrength === userBStrength) {
+        return Math.random() - 0.5;
+      }
+      return userBStrength - userAStrength;
+    });
+
+    const newTeam1 = {};
+    const newTeam2 = {};
+
+    // distribute
+    const zeroOr1 = Math.random() < 0.5 ? 0 : 1;
+    for (let i = 0; i < combined.length; i++) {
+      if (i % 2 === zeroOr1) {
+        newTeam1[combined[i]] = true;
+      } else {
+        newTeam2[combined[i]] = true;
+      }
+    }
+
+    setTeam1Players(newTeam1);
+    setTeam2Players(newTeam2);
+  };
+
   const playerProps = {
     ddragonURL: ddragonURL,
     championMap,
@@ -220,11 +320,13 @@ function App() {
     onPlayerRightClick: onPlayerRightClick,
   };
 
+  // console.log(userMap);
+
   return (
     <div className="App">
       <div className="main-content">
         <header></header>
-        <div className="title">LOL 사용자 설정 게임 팀 구성</div>
+        <div className="title">LOL 사용자 설정 게임 팀 구성 {PackageJson.version}v</div>
         <div className="description">
           본 서비스는 리그오브레전드의 사용자 설정 게임에서 팀 인원 분배를 도와주는 툴 및 기능을 제공합니다.
           <br />
@@ -253,6 +355,32 @@ function App() {
               }
             }}
           />
+        </div>
+        <div className="functions">
+          <div className="function best" onClick={combinateTeamByStrengthWithBalance}>
+            <div className="icon">
+              <IoCalculator />
+            </div>
+            <div className="name">최적의 조합</div>
+          </div>
+          <div className="function" onClick={combine10Players}>
+            <div className="icon">
+              <IoArrowUp />
+            </div>
+            <div className="name">10명 구성</div>
+          </div>
+          <div className="function" onClick={swapTeams}>
+            <div className="icon">
+              <IoSwapHorizontal />
+            </div>
+            <div className="name">팀 스왑하기</div>
+          </div>
+          <div className="function" onClick={shufflePlayers}>
+            <div className="icon">
+              <IoShuffle />
+            </div>
+            <div className="name">소환사 섞기</div>
+          </div>
         </div>
         <div className="team-composition">
           <div
@@ -370,7 +498,7 @@ const Player = ({
           const championEngName = champion?.id ?? "unknown";
           const championName = champion?.name ?? "unknown";
           return (
-            <div className={"mastery " + "level-" + e?.championLevel} key={ind}>
+            <div className={"mastery " + "level-" + e?.championLevel + (ind === 0 ? " best" : "")} key={ind}>
               <img src={`${ddragonURL}/img/champion/${championEngName}.png`} />
               <div className="mastery-point">{masteryKoreanPoints(e.championPoints)}</div>
             </div>
