@@ -40,7 +40,6 @@ export const getSummonerAllInfo = async (summonerName) => {
 
   const masteryInfo = await getMasteryInfo(id);
   const submasteries = masteryInfo.slice(0, 5);
-  console.log(masteryInfo);
 
   const user = new RiotUser(summonerName);
   user.id = id;
@@ -48,6 +47,7 @@ export const getSummonerAllInfo = async (summonerName) => {
   user.puuid = puuid;
   user.profileIconId = summonerInfo.profileIconId;
   user.summonerLevel = summonerInfo.summonerLevel;
+  user.lastUpdateTime = Date.now();
   user.masteries = submasteries.map((mastery) => {
     const { championId, championLevel, championPoints } = mastery;
     return new Mastery(championId, championLevel, championPoints);

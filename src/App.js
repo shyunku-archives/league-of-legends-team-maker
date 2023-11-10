@@ -1,16 +1,31 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getLatestDataDragonURL, getSummonerAllInfo } from "./thunks";
-import { IoArrowUp, IoCalculator, IoRemoveCircle, IoShuffle, IoSwapHorizontal } from "react-icons/io5";
+import {
+  IoArrowUp,
+  IoCalculator,
+  IoRemoveCircle,
+  IoShuffle,
+  IoSwapHorizontal,
+  IoArrowForward,
+  IoArrowBack,
+  IoArrowDown,
+  IoRefresh,
+  IoClose,
+} from "react-icons/io5";
 import {
   getTierRankByStrength,
   getTierRankKoreanStringByStrength,
   masteryKoreanPoints,
+  numberToRank,
   tierRankKoreanString,
 } from "./util";
 import PackageJson from "../package.json";
-import axios from "axios";
+import axios, { AxiosError } from "axios";
+import { RiotUser, Tier, toRelativeTime } from "./types";
+import toast from "react-hot-toast";
 
 function App() {
+  const [initialized, setInitialized] = useState(false);
   const [userMap, setUserMap] = useState({});
   const [summonerNameInput, setSummonerNameInput] = useState("");
 
@@ -24,45 +39,97 @@ function App() {
   const [ddragonURL, setDdragonURL] = useState("");
   const [championMap, setChampionMap] = useState({});
 
-  const team1Strength = useMemo(() => {
-    return Object.keys(team1players).reduce((acc, cur) => {
-      const user = userMap[cur];
-      if (user == null) return acc;
-      return acc + user.getRepresentativeStrength();
-    }, 0);
+  const team1AvgStrength = useMemo(() => {
+    let sum = 0;
+    let count = 0;
+    for (let e in team1players) {
+      const user = userMap[e];
+      if (user == null) continue;
+      if (user.getRepresentativeStrength() === 0) continue;
+      sum += user.getRepresentativeStrength();
+      count++;
+    }
+    if (count === 0) return 0;
+    return sum / count;
   }, [team1players, userMap]);
 
-  const team2Strength = useMemo(() => {
-    return Object.keys(team2players).reduce((acc, cur) => {
-      const user = userMap[cur];
-      if (user == null) return acc;
-      return acc + user.getRepresentativeStrength();
-    }, 0);
-  }, [team2players, userMap]);
-
-  const team1AvgStrength = useMemo(() => {
-    const team1PlayerCount = Object.keys(team1players).length;
-    if (team1PlayerCount === 0) return 0;
-    return team1Strength / team1PlayerCount;
-  }, [team1players, team1Strength]);
-
   const team2AvgStrength = useMemo(() => {
-    const team2PlayerCount = Object.keys(team2players).length;
-    if (team2PlayerCount === 0) return 0;
-    return team2Strength / team2PlayerCount;
-  }, [team2players, team2Strength]);
+    let sum = 0;
+    let count = 0;
+    for (let e in team2players) {
+      const user = userMap[e];
+      if (user == null) continue;
+      if (user.getRepresentativeStrength() === 0) continue;
+      sum += user.getRepresentativeStrength();
+      count++;
+    }
+    if (count === 0) return 0;
+    return sum / count;
+  }, [team2players, userMap]);
 
   const team1TierRank = useMemo(() => {
     return getTierRankByStrength(team1AvgStrength);
-  }, [team1Strength]);
+  }, [team1AvgStrength]);
 
   const team2TierRank = useMemo(() => {
     return getTierRankByStrength(team2AvgStrength);
-  }, [team2Strength]);
+  }, [team2AvgStrength]);
 
   const isReady = useMemo(() => {
     return ddragonURL !== "";
   }, [ddragonURL]);
+
+  useEffect(() => {
+    if (!initialized) {
+      let isInitial =
+        Object.keys(userMap).length === 0 &&
+        Object.keys(team1players).length === 0 &&
+        Object.keys(team2players).length === 0 &&
+        Object.keys(playerQueue).length === 0;
+      if (isInitial) {
+        const userMapStr = localStorage.getItem("userMap");
+        const team1playersStr = localStorage.getItem("team1players");
+        const team2playersStr = localStorage.getItem("team2players");
+        const playerQueueStr = localStorage.getItem("playerQueue");
+
+        if (userMapStr != null) {
+          try {
+            const userMapObj = JSON.parse(userMapStr);
+            const refinedUserMapObj = Object.keys(userMapObj).reduce((acc, cur) => {
+              const user = userMapObj[cur];
+              if (user == null) return acc;
+              acc[cur] = RiotUser.fromObject(user);
+              return acc;
+            }, {});
+            console.log(refinedUserMapObj);
+            setUserMap(refinedUserMapObj);
+          } catch (err) {
+            console.error(err);
+          }
+        }
+        if (team1playersStr != null) {
+          const team1playersObj = JSON.parse(team1playersStr);
+          console.log(team1playersObj);
+          setTeam1Players(team1playersObj);
+        }
+        if (team2playersStr != null) {
+          const team2playersObj = JSON.parse(team2playersStr);
+          console.log(team2playersObj);
+          setTeam2Players(team2playersObj);
+        }
+        if (playerQueueStr != null) {
+          const playerQueueObj = JSON.parse(playerQueueStr);
+          console.log(playerQueueObj);
+          setPlayerQueue(playerQueueObj);
+        }
+        setInitialized(true);
+      }
+    }
+    localStorage.setItem("userMap", JSON.stringify(userMap));
+    localStorage.setItem("team1players", JSON.stringify(team1players));
+    localStorage.setItem("team2players", JSON.stringify(team2players));
+    localStorage.setItem("playerQueue", JSON.stringify(playerQueue));
+  }, [userMap, team1players, team2players, initialized, playerQueue]);
 
   useEffect(() => {
     (async () => {
@@ -84,21 +151,34 @@ function App() {
     })();
   }, []);
 
-  const onSearch = async () => {
-    if (summonerNameInput === "") return;
-    if (Object.keys(userMap).includes(summonerNameInput)) {
-      alert("이미 추가된 소환사입니다.");
+  const onSearch = async (name = "") => {
+    const input = name === "" ? summonerNameInput : name;
+    const isUpdate = name !== "";
+    if (input === "") return;
+    let alreadyExists = Object.keys(userMap).includes(input);
+    if (!isUpdate && alreadyExists) {
+      toast.error(`"${input}"는/은 이미 추가된 소환사입니다.`);
+      setSummonerNameInput("");
       return;
     }
 
     try {
-      const res = await getSummonerAllInfo(summonerNameInput);
+      const res = await getSummonerAllInfo(input);
       setUserMap((prev) => ({ ...prev, [res.name]: res }));
-      setPlayerQueue((prev) => ({ ...prev, [res.name]: true }));
+      if (!alreadyExists) {
+        setPlayerQueue((prev) => ({ ...prev, [res.name]: true }));
+      }
       setSummonerNameInput("");
+      toast.success("추가 완료!");
     } catch (err) {
-      alert("그런 이름의 소환사는 없습니다.");
-      console.log(err);
+      if (err instanceof AxiosError) {
+        console.log(err);
+        console.log(err.response);
+        console.log(JSON.stringify(err));
+        toast.error("소환사 정보를 가져오는데 실패했습니다.");
+      } else {
+        toast.error("오류가 발생했습니다!");
+      }
     }
   };
 
@@ -123,6 +203,24 @@ function App() {
       delete newMap[username];
       return newMap;
     });
+  };
+
+  const onMovePlayer = (username, team) => {
+    if (team === 1) {
+      setTeam1Players((prev) => {
+        const newMap = { ...prev };
+        delete newMap[username];
+        return newMap;
+      });
+      setTeam2Players((prev) => ({ ...prev, [username]: true }));
+    } else {
+      setTeam2Players((prev) => {
+        const newMap = { ...prev };
+        delete newMap[username];
+        return newMap;
+      });
+      setTeam1Players((prev) => ({ ...prev, [username]: true }));
+    }
   };
 
   const onPlayerDragStart = (e, username) => {
@@ -311,10 +409,38 @@ function App() {
     setTeam2Players(newTeam2);
   };
 
+  const moveAllToQueue = () => {
+    const newQueue = { ...playerQueue };
+    const team1 = { ...team1players };
+    const team2 = { ...team2players };
+
+    Object.keys(team1).forEach((e) => {
+      newQueue[e] = true;
+    });
+    Object.keys(team2).forEach((e) => {
+      newQueue[e] = true;
+    });
+
+    setPlayerQueue(newQueue);
+    setTeam1Players({});
+    setTeam2Players({});
+  };
+
+  const removeAll = () => {
+    setUserMap({});
+    setPlayerQueue({});
+    setTeam1Players({});
+    setTeam2Players({});
+  };
+
   const playerProps = {
     ddragonURL: ddragonURL,
     championMap,
+    userMap,
+    setUserMap,
     onRemovePlayer: onRemovePlayer,
+    onMovePlayer: onMovePlayer,
+    onUpdatePlayer: onSearch,
     onPlayerDragStart: onPlayerDragStart,
     onPlayerDragEnd: onPlayerDragEnd,
     onPlayerRightClick: onPlayerRightClick,
@@ -381,6 +507,18 @@ function App() {
             </div>
             <div className="name">소환사 섞기</div>
           </div>
+          <div className="function" onClick={moveAllToQueue}>
+            <div className="icon">
+              <IoArrowDown />
+            </div>
+            <div className="name">전부 대기열로 이동</div>
+          </div>
+          <div className="function negative" onClick={removeAll}>
+            <div className="icon">
+              <IoClose />
+            </div>
+            <div className="name">전부 제거</div>
+          </div>
         </div>
         <div className="team-composition">
           <div
@@ -403,7 +541,7 @@ function App() {
               {Object.keys(team1players)
                 .filter((e) => userMap[e] != null)
                 .map((e, ind) => (
-                  <Player key={ind} user={userMap[e] ?? null} {...playerProps} />
+                  <Player key={ind} user={userMap[e] ?? null} team={1} {...playerProps} />
                 ))}
             </div>
           </div>
@@ -427,7 +565,7 @@ function App() {
               {Object.keys(team2players)
                 .filter((e) => userMap[e] != null)
                 .map((e, ind) => (
-                  <Player key={ind} user={userMap[e] ?? null} {...playerProps} />
+                  <Player key={ind} user={userMap[e] ?? null} team={2} {...playerProps} />
                 ))}
             </div>
           </div>
@@ -449,14 +587,66 @@ function App() {
 
 const Player = ({
   user,
+  team,
+  userMap,
+  setUserMap,
   ddragonURL,
   championMap,
   onRemovePlayer,
+  onMovePlayer,
+  onUpdatePlayer,
   onPlayerDragStart,
   onPlayerDragEnd,
   onPlayerRightClick,
 }) => {
-  const profileImageURL = `${ddragonURL}/img/profileicon/${user?.profileIconId}.png`;
+  const profileImageURL = useMemo(
+    () => `${ddragonURL}/img/profileicon/${user?.profileIconId}.png`,
+    [user?.profileIconId, ddragonURL]
+  );
+
+  const [p, setP] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setP((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const isAllTierVisible = useMemo(() => {
+    return user?.ex_tier != null && user?.sr_tier != null && user?.fr_tier != null;
+  }, [user?.ex_tier, user?.sr_tier, user?.fr_tier]);
+
+  const setExTier = () => {
+    if (userMap[user?.name] == null) return;
+    const input = prompt("지정 티어를 입력하세요. (예: Diamond 1)");
+    if (input == null) return;
+    try {
+      if (input === "") {
+        setUserMap((prev) => {
+          const newMap = { ...prev };
+          newMap[user?.name] = newMap[user?.name] ?? new RiotUser(user?.name);
+          newMap[user?.name].ex_tier = null;
+          return newMap;
+        });
+      } else {
+        const [tierRaw, rankRaw] = input.split(" ");
+        let tier = tierRaw.toUpperCase();
+        let rank = numberToRank(parseInt(rankRaw));
+        if (rank === "") throw new Error();
+        const newTier = new Tier(tier, rank, 0, 0, 0);
+
+        setUserMap((prev) => {
+          const newMap = { ...prev };
+          newMap[user?.name] = newMap[user?.name] ?? new RiotUser(user?.name);
+          newMap[user?.name].ex_tier = newTier;
+          return newMap;
+        });
+      }
+    } catch (err) {
+      toast.error("잘못된 입력입니다.");
+    }
+  };
 
   return (
     <div
@@ -465,6 +655,7 @@ const Player = ({
       onDragStart={(e) => onPlayerDragStart(e, user?.name)}
       onDragEnd={onPlayerDragEnd}
       onContextMenu={(e) => onPlayerRightClick(e, user?.name)}
+      onClick={setExTier}
     >
       <div className="team-member-profile-image">
         <img src={profileImageURL}></img>
@@ -472,15 +663,24 @@ const Player = ({
       </div>
       {/* {user?.getRepresentativeStrength()} */}
       <div className="team-member-detail">
-        <div className="team-member-name">{user?.name}</div>
+        <div className="team-member-detail-group">
+          <div className="team-member-name">{user?.name}</div>
+          <div className="team-member-update-time">{toRelativeTime(user?.lastUpdateTime)}</div>
+        </div>
         <div className="team-member-ranks">
+          {user?.ex_tier != null && (
+            <div className={"team-member-rank tier " + user?.ex_tier?.tier?.toLowerCase()}>
+              <div className="team-member-rank-title">지정</div>
+              <div className="team-member-rank-tier">{user?.ex_tier?.getTierRankKoreanString()}</div>
+            </div>
+          )}
           {user?.sr_tier != null && (
             <div className={"team-member-rank tier " + user?.sr_tier?.tier?.toLowerCase()}>
               <div className="team-member-rank-title">솔랭</div>
               <div className="team-member-rank-tier">{user?.sr_tier?.getTierRankKoreanString()}</div>
             </div>
           )}
-          {user?.fr_tier != null && (
+          {user?.fr_tier != null && !isAllTierVisible && (
             <div className={"team-member-rank tier " + user?.fr_tier?.tier?.toLowerCase()}>
               <div className="team-member-rank-title">자랭</div>
               <div className="team-member-rank-tier">{user?.fr_tier?.getTierRankKoreanString()}</div>
@@ -506,8 +706,14 @@ const Player = ({
         })}
       </div>
       <div className="tail">
-        <div className="remove-icon" onClick={(e) => onRemovePlayer(user?.name)}>
+        <div className="remove-icon tail-icon" onClick={(e) => onRemovePlayer(user?.name)}>
           <IoRemoveCircle />
+        </div>
+        <div className="move-icon tail-icon" onClick={(e) => onMovePlayer(user?.name, team)}>
+          {team === 1 ? <IoArrowForward /> : team === 2 && <IoArrowBack />}
+        </div>
+        <div className="update-icon tail-icon" onClick={(e) => onUpdatePlayer(user?.name)}>
+          <IoRefresh />
         </div>
       </div>
     </div>

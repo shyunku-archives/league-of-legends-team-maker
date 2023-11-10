@@ -33,17 +33,20 @@ export const getTierStrength = (tier, rank) => {
     case "PLATINUM":
       tierLevel = 4;
       break;
-    case "DIAMOND":
+    case "EMERALD":
       tierLevel = 5;
       break;
-    case "MASTER":
+    case "DIAMOND":
       tierLevel = 6;
       break;
-    case "GRANDMASTER":
+    case "MASTER":
       tierLevel = 7;
       break;
-    case "CHALLENGER":
+    case "GRANDMASTER":
       tierLevel = 8;
+      break;
+    case "CHALLENGER":
+      tierLevel = 9;
       break;
     default:
       tierLevel = 0;
@@ -101,6 +104,21 @@ export const tierKoreanString = (tier) => {
   }
 };
 
+export const numberToRank = (number) => {
+  switch (number) {
+    case 1:
+      return "I";
+    case 2:
+      return "II";
+    case 3:
+      return "III";
+    case 4:
+      return "IV";
+    default:
+      return "";
+  }
+};
+
 export const rankKoreanString = (rank) => {
   switch (rank) {
     case "I":
@@ -147,15 +165,18 @@ export const getTierRankByStrength = (strength) => {
       tier = "PLATINUM";
       break;
     case 5:
-      tier = "DIAMOND";
+      tier = "EMERALD";
       break;
     case 6:
-      tier = "MASTER";
+      tier = "DIAMOND";
       break;
     case 7:
-      tier = "GRANDMASTER";
+      tier = "MASTER";
       break;
     case 8:
+      tier = "GRANDMASTER";
+      break;
+    case 9:
       tier = "CHALLENGER";
       break;
     default:
