@@ -30,7 +30,7 @@ export const getMasteryInfo = async (summonerId) => {
  */
 export const getSummonerAllInfo = async (summonerName) => {
   const summonerInfo = await getSummonerByName(summonerName);
-  const { id, accountId, puuid } = summonerInfo;
+  const { id, accountId, puuid, name } = summonerInfo;
   // get solo tier, 5vs5 tier, top tier
   const leagueInfo = await requestRiot(`/lol/league/v4/entries/by-summoner/${id}`);
   const reducedLeagueInfo = leagueInfo.reduce((acc, cur) => {
@@ -40,8 +40,9 @@ export const getSummonerAllInfo = async (summonerName) => {
 
   const masteryInfo = await getMasteryInfo(id);
   const submasteries = masteryInfo.slice(0, 5);
+  console.log("summonerInfo", summonerInfo);
 
-  const user = new RiotUser(summonerName);
+  const user = new RiotUser(name);
   user.id = id;
   user.accountId = accountId;
   user.puuid = puuid;

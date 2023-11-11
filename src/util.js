@@ -1,4 +1,8 @@
-export const getTierStrength = (tier, rank) => {
+export const topTier = 7; // Master(7) ~ Challenger(9)
+const maxLp = 100;
+const topTierBase = topTier * 4 * maxLp;
+
+export const getTierStrength = (tier, rank, lp = 0) => {
   let tierLevel, rankLevel;
 
   // include emerald
@@ -71,7 +75,11 @@ export const getTierStrength = (tier, rank) => {
       break;
   }
 
-  const strength = tierLevel * 4 + rankLevel;
+  if (tierLevel >= topTier) {
+    return topTierBase + lp;
+  }
+
+  const strength = (tierLevel * 4 + rankLevel) * maxLp + lp;
   return strength;
 };
 
@@ -136,73 +144,92 @@ export const rankKoreanString = (rank) => {
   }
 };
 
-export const tierRankKoreanString = (tier, rank) => {
-  return `${tierKoreanString(tier)} ${rankKoreanString(rank)}`;
+export const tierRankKoreanString = (tier, rank, lp) => {
+  const lpString = lp != null ? ` (${lp} LP)` : "";
+  return `${tierKoreanString(tier)} ${rankKoreanString(rank)}${lpString}`;
 };
 
 export const getTierRankByStrength = (strength) => {
   if (strength === 0) return "언랭";
   strength = Math.round(strength);
-  const tierLevel = Math.floor(strength / 4);
-  const rankLevel = strength % 4;
 
-  let tier, rank;
+  let tier, rank, lp;
 
-  switch (tierLevel) {
-    case 0:
-      tier = "IRON";
-      break;
-    case 1:
-      tier = "BRONZE";
-      break;
-    case 2:
-      tier = "SILVER";
-      break;
-    case 3:
-      tier = "GOLD";
-      break;
-    case 4:
-      tier = "PLATINUM";
-      break;
-    case 5:
-      tier = "EMERALD";
-      break;
-    case 6:
-      tier = "DIAMOND";
-      break;
-    case 7:
-      tier = "MASTER";
-      break;
-    case 8:
-      tier = "GRANDMASTER";
-      break;
-    case 9:
+  if (strength >= topTierBase) {
+    const remainLp = strength - topTierBase;
+    if (remainLp >= 500) {
       tier = "CHALLENGER";
-      break;
-    default:
-      tier = "%TOO_HIGH%";
-      break;
+      rank = "I";
+    } else if (remainLp >= 200) {
+      tier = "GRANDMASTER";
+      rank = "I";
+    } else {
+      tier = "MASTER";
+      rank = "I";
+    }
+    lp = remainLp;
+  } else {
+    lp = strength % maxLp;
+    strength = Math.floor(strength / maxLp);
+    const tierLevel = Math.floor(strength / 4);
+    const rankLevel = strength % 4;
+
+    switch (tierLevel) {
+      case 0:
+        tier = "IRON";
+        break;
+      case 1:
+        tier = "BRONZE";
+        break;
+      case 2:
+        tier = "SILVER";
+        break;
+      case 3:
+        tier = "GOLD";
+        break;
+      case 4:
+        tier = "PLATINUM";
+        break;
+      case 5:
+        tier = "EMERALD";
+        break;
+      case 6:
+        tier = "DIAMOND";
+        break;
+      case 7:
+        tier = "MASTER";
+        break;
+      case 8:
+        tier = "GRANDMASTER";
+        break;
+      case 9:
+        tier = "CHALLENGER";
+        break;
+      default:
+        tier = "%TOO_HIGH%";
+        break;
+    }
+
+    switch (rankLevel) {
+      case 3:
+        rank = "I";
+        break;
+      case 2:
+        rank = "II";
+        break;
+      case 1:
+        rank = "III";
+        break;
+      case 0:
+        rank = "IV";
+        break;
+      default:
+        rank = "I";
+        break;
+    }
   }
 
-  switch (rankLevel) {
-    case 3:
-      rank = "I";
-      break;
-    case 2:
-      rank = "II";
-      break;
-    case 1:
-      rank = "III";
-      break;
-    case 0:
-      rank = "IV";
-      break;
-    default:
-      rank = "I";
-      break;
-  }
-
-  return { tier, rank };
+  return { tier, rank, lp };
 };
 
 export const masteryKoreanPoints = (points) => {

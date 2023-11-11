@@ -1,28 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getLatestDataDragonURL, getSummonerAllInfo } from "./thunks";
 import {
   IoArrowUp,
   IoCalculator,
-  IoRemoveCircle,
   IoShuffle,
   IoSwapHorizontal,
-  IoArrowForward,
-  IoArrowBack,
   IoArrowDown,
-  IoRefresh,
+  IoReturnDownBack,
   IoClose,
 } from "react-icons/io5";
-import {
-  getTierRankByStrength,
-  getTierRankKoreanStringByStrength,
-  masteryKoreanPoints,
-  numberToRank,
-  tierRankKoreanString,
-} from "./util";
+import { getTierRankByStrength, tierRankKoreanString } from "./util";
 import PackageJson from "../package.json";
 import axios, { AxiosError } from "axios";
 import { RiotUser, Tier, toRelativeTime } from "./types";
 import toast from "react-hot-toast";
+import PlayerCard from "components/PlayerCard";
 
 function App() {
   const [initialized, setInitialized] = useState(false);
@@ -39,13 +31,33 @@ function App() {
   const [ddragonURL, setDdragonURL] = useState("");
   const [championMap, setChampionMap] = useState({});
 
+  const team1Strength = useMemo(() => {
+    let sum = 0;
+    for (let e in team1players) {
+      const user = userMap[e];
+      if (user == null) continue;
+      sum += user.getRepresentativeStrength();
+    }
+    return sum;
+  }, [team1players, userMap]);
+
+  const team2Strength = useMemo(() => {
+    let sum = 0;
+    for (let e in team2players) {
+      const user = userMap[e];
+      if (user == null) continue;
+      sum += user.getRepresentativeStrength();
+    }
+    return sum;
+  }, [team2players, userMap]);
+
   const team1AvgStrength = useMemo(() => {
     let sum = 0;
     let count = 0;
     for (let e in team1players) {
       const user = userMap[e];
       if (user == null) continue;
-      if (user.getRepresentativeStrength() === 0) continue;
+      // if (user.getRepresentativeStrength() === 0) continue;
       sum += user.getRepresentativeStrength();
       count++;
     }
@@ -59,7 +71,7 @@ function App() {
     for (let e in team2players) {
       const user = userMap[e];
       if (user == null) continue;
-      if (user.getRepresentativeStrength() === 0) continue;
+      // if (user.getRepresentativeStrength() === 0) continue;
       sum += user.getRepresentativeStrength();
       count++;
     }
@@ -98,30 +110,47 @@ function App() {
             const refinedUserMapObj = Object.keys(userMapObj).reduce((acc, cur) => {
               const user = userMapObj[cur];
               if (user == null) return acc;
-              acc[cur] = RiotUser.fromObject(user);
+              acc[user.puuid] = RiotUser.fromObject(user);
               return acc;
             }, {});
             console.log(refinedUserMapObj);
             setUserMap(refinedUserMapObj);
+
+            if (team1playersStr != null) {
+              const team1playersObj = JSON.parse(team1playersStr);
+              for (let team1MemberId in team1playersObj) {
+                if (!refinedUserMapObj.hasOwnProperty(team1MemberId)) {
+                  delete team1playersObj[team1MemberId];
+                }
+              }
+              console.log(team1playersObj);
+              setTeam1Players(team1playersObj);
+            }
+            if (team2playersStr != null) {
+              const team2playersObj = JSON.parse(team2playersStr);
+              for (let team2MemberId in team2playersObj) {
+                if (!refinedUserMapObj.hasOwnProperty(team2MemberId)) {
+                  delete team2playersObj[team2MemberId];
+                }
+              }
+              console.log(team2playersObj);
+              setTeam2Players(team2playersObj);
+            }
+            if (playerQueueStr != null) {
+              const playerQueueObj = JSON.parse(playerQueueStr);
+              for (let queueMemberId in playerQueueObj) {
+                if (!refinedUserMapObj.hasOwnProperty(queueMemberId)) {
+                  delete playerQueueObj[queueMemberId];
+                }
+              }
+              console.log(playerQueueObj);
+              setPlayerQueue(playerQueueObj);
+            }
           } catch (err) {
             console.error(err);
           }
         }
-        if (team1playersStr != null) {
-          const team1playersObj = JSON.parse(team1playersStr);
-          console.log(team1playersObj);
-          setTeam1Players(team1playersObj);
-        }
-        if (team2playersStr != null) {
-          const team2playersObj = JSON.parse(team2playersStr);
-          console.log(team2playersObj);
-          setTeam2Players(team2playersObj);
-        }
-        if (playerQueueStr != null) {
-          const playerQueueObj = JSON.parse(playerQueueStr);
-          console.log(playerQueueObj);
-          setPlayerQueue(playerQueueObj);
-        }
+
         setInitialized(true);
       }
     }
@@ -151,24 +180,34 @@ function App() {
     })();
   }, []);
 
-  const onSearch = async (name = "") => {
-    const input = name === "" ? summonerNameInput : name;
-    const isUpdate = name !== "";
+  const onSearch = async (e = null, user = null) => {
+    if (e != null) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    const input = user === null ? summonerNameInput : user?.name;
+    setSummonerNameInput("");
+
+    const isUpdate = user !== null;
     if (input === "") return;
-    let alreadyExists = Object.keys(userMap).includes(input);
+    let alreadyExists = Object.keys(userMap).reduce((acc, cur) => {
+      if (acc) return acc;
+      if (userMap[cur].name.toLowerCase() === input.toLowerCase()) {
+        return true;
+      }
+      return acc;
+    }, false);
     if (!isUpdate && alreadyExists) {
       toast.error(`"${input}"는/은 이미 추가된 소환사입니다.`);
-      setSummonerNameInput("");
       return;
     }
 
     try {
       const res = await getSummonerAllInfo(input);
-      setUserMap((prev) => ({ ...prev, [res.name]: res }));
+      setUserMap((prev) => ({ ...prev, [res.puuid]: res }));
       if (!alreadyExists) {
-        setPlayerQueue((prev) => ({ ...prev, [res.name]: true }));
+        setPlayerQueue((prev) => ({ ...prev, [res.puuid]: true }));
       }
-      setSummonerNameInput("");
       toast.success("추가 완료!");
     } catch (err) {
       if (err instanceof AxiosError) {
@@ -182,52 +221,61 @@ function App() {
     }
   };
 
-  const onRemovePlayer = (username) => {
+  const onRemovePlayer = (e, userId) => {
+    e.preventDefault();
+    e.stopPropagation();
     setUserMap((prev) => {
       const newMap = { ...prev };
-      delete newMap[username];
+      delete newMap[userId];
       return newMap;
     });
     setTeam1Players((prev) => {
       const newMap = { ...prev };
-      delete newMap[username];
+      delete newMap[userId];
       return newMap;
     });
     setTeam2Players((prev) => {
       const newMap = { ...prev };
-      delete newMap[username];
+      delete newMap[userId];
       return newMap;
     });
     setPlayerQueue((prev) => {
       const newMap = { ...prev };
-      delete newMap[username];
+      delete newMap[userId];
       return newMap;
     });
   };
 
-  const onMovePlayer = (username, team) => {
+  const onMovePlayer = (e, userId, team) => {
+    e.preventDefault();
+    e.stopPropagation();
     if (team === 1) {
       setTeam1Players((prev) => {
         const newMap = { ...prev };
-        delete newMap[username];
+        delete newMap[userId];
         return newMap;
       });
-      setTeam2Players((prev) => ({ ...prev, [username]: true }));
+      if (userMap.hasOwnProperty(userId)) {
+        setTeam2Players((prev) => ({ ...prev, [userId]: true }));
+      }
     } else {
       setTeam2Players((prev) => {
         const newMap = { ...prev };
-        delete newMap[username];
+        delete newMap[userId];
         return newMap;
       });
-      setTeam1Players((prev) => ({ ...prev, [username]: true }));
+      if (userMap.hasOwnProperty(userId)) {
+        setTeam1Players((prev) => ({ ...prev, [userId]: true }));
+      }
     }
   };
 
-  const onPlayerDragStart = (e, username) => {
+  const onPlayerDragStart = (e, userId) => {
     // e.preventDefault();
+    // e.stopPropagation();
     setDragging(true);
-    // e.target.classList.add("grabbing");
-    e.dataTransfer.setData("text/plain", username);
+    e.dataTransfer.setData("text/plain", userId);
+
     console.log("-> drag start", e.target);
   };
 
@@ -237,17 +285,17 @@ function App() {
     console.log("<- drag end", e.target);
   };
 
-  const onPlayerRightClick = (e, username) => {
+  const onMovePlayerToQueue = (e, userId) => {
     e.preventDefault();
-    setPlayerQueue((prev) => ({ ...prev, [username]: true }));
+    setPlayerQueue((prev) => ({ ...prev, [userId]: true }));
     setTeam1Players((prev) => {
       const newMap = { ...prev };
-      delete newMap[username];
+      delete newMap[userId];
       return newMap;
     });
     setTeam2Players((prev) => {
       const newMap = { ...prev };
-      delete newMap[username];
+      delete newMap[userId];
       return newMap;
     });
   };
@@ -275,12 +323,12 @@ function App() {
     setDragging(false);
     setDroppingTeam1(false);
 
-    const draggingUsername = e.dataTransfer.getData("text/plain");
-    console.log("team1 add", draggingUsername);
-    setTeam1Players((prev) => ({ ...prev, [draggingUsername]: true }));
+    const draggingUserId = e.dataTransfer.getData("text/plain");
+    console.log("team1 add", draggingUserId);
+    setTeam1Players((prev) => ({ ...prev, [draggingUserId]: true }));
     setPlayerQueue((prev) => {
       const newMap = { ...prev };
-      delete newMap[draggingUsername];
+      delete newMap[draggingUserId];
       return newMap;
     });
   };
@@ -310,12 +358,12 @@ function App() {
     setDragging(false);
     setDroppingTeam2(false);
 
-    const draggingUsername = e.dataTransfer.getData("text/plain");
-    console.log("team2 add", draggingUsername);
-    setTeam2Players((prev) => ({ ...prev, [draggingUsername]: true }));
+    const draggingUserId = e.dataTransfer.getData("text/plain");
+    console.log("team2 add", draggingUserId);
+    setTeam2Players((prev) => ({ ...prev, [draggingUserId]: true }));
     setPlayerQueue((prev) => {
       const newMap = { ...prev };
-      delete newMap[draggingUsername];
+      delete newMap[draggingUserId];
       return newMap;
     });
   };
@@ -327,7 +375,7 @@ function App() {
     setTeam2Players(newTeam2);
   };
 
-  const combine10Players = () => {
+  const combineAllPlayers = () => {
     const team1 = { ...team1players };
     const team2 = { ...team2players };
     const queue = { ...playerQueue };
@@ -338,7 +386,7 @@ function App() {
     const newTeam1 = {};
     const newTeam2 = {};
 
-    for (let i = 0; i < combined.length && i < 10; i++) {
+    for (let i = 0; i < combined.length; i++) {
       if (i % 2 === 0) {
         newTeam1[combined[i]] = true;
       } else {
@@ -361,8 +409,6 @@ function App() {
     const newTeam1Players = shuffledPlayers.slice(0, Object.keys(newTeam1).length);
     const newTeam2Players = shuffledPlayers.slice(Object.keys(newTeam1).length);
 
-    console.log(newTeam1Players, newTeam2Players);
-
     const newTeam1Map = newTeam1Players.reduce((acc, cur) => {
       acc[cur] = true;
       return acc;
@@ -377,36 +423,75 @@ function App() {
   };
 
   const combinateTeamByStrengthWithBalance = () => {
-    const team1 = { ...team1players };
-    const team2 = { ...team2players };
-    const combined = Object.keys(team1).concat(Object.keys(team2));
-    combined.sort((a, b) => {
-      const userA = userMap[a];
-      const userB = userMap[b];
-      if (userA == null || userB == null) return 0;
-      const userAStrength = userA.getRepresentativeStrength();
-      const userBStrength = userB.getRepresentativeStrength();
-      if (userAStrength === userBStrength) {
-        return Math.random() - 0.5;
+    const allPlayers = { ...team1players, ...team2players };
+    const playerStrengths = Object.keys(allPlayers).reduce((acc, playerId) => {
+      acc[playerId] = userMap[playerId].getRepresentativeStrength();
+      return acc;
+    }, {});
+
+    const totalStrength = Object.values(playerStrengths).reduce((sum, strength) => sum + strength, 0);
+    const pickerLength = Math.floor(Object.keys(playerStrengths).length / 2);
+
+    // console.log("playerStrengths", playerStrengths);
+
+    // index 0 ~ 9, combine 5 players
+    const iterate = (arr, num) => {
+      const results = [];
+      if (num === 1) {
+        return arr.map((element) => [element]);
       }
-      return userBStrength - userAStrength;
+      arr.forEach((fixed, index, origin) => {
+        const rest = origin.slice(index + 1);
+        const combinations = iterate(rest, num - 1);
+        const attached = combinations.map((combination) => [fixed, ...combination]);
+        results.push(...attached);
+      });
+      return results;
+    };
+
+    const combinations = iterate(Object.keys(playerStrengths), pickerLength);
+
+    let bestCombinations = [];
+    let bestDiff = Infinity;
+    combinations.forEach((combination) => {
+      const team1Strength = combination.reduce((sum, id) => sum + playerStrengths[id], 0);
+
+      const team2Strength = totalStrength - team1Strength;
+      const diff = Math.abs(team1Strength - team2Strength);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        bestCombinations = [combination];
+      } else if (Math.abs(diff - bestDiff) < 100) {
+        bestCombinations.push(combination);
+      }
     });
 
     const newTeam1 = {};
     const newTeam2 = {};
 
-    // distribute
-    const zeroOr1 = Math.random() < 0.5 ? 0 : 1;
-    for (let i = 0; i < combined.length; i++) {
-      if (i % 2 === zeroOr1) {
-        newTeam1[combined[i]] = true;
+    const randomIndex = Math.floor(Math.random() * bestCombinations.length);
+    const bestCombination = bestCombinations[randomIndex];
+    // console.log("combinations", combinations);
+    console.log("bestCombinations", bestCombinations);
+    console.log("bestCombination", bestCombination);
+    for (let playerId in playerStrengths) {
+      if (bestCombination.includes(playerId)) {
+        newTeam1[playerId] = true;
       } else {
-        newTeam2[combined[i]] = true;
+        newTeam2[playerId] = true;
       }
     }
 
     setTeam1Players(newTeam1);
     setTeam2Players(newTeam2);
+  };
+
+  const initAllExTier = () => {
+    const newMap = { ...userMap };
+    Object.keys(newMap).forEach((e) => {
+      newMap[e].ex_tier = null;
+    });
+    setUserMap(newMap);
   };
 
   const moveAllToQueue = () => {
@@ -427,6 +512,8 @@ function App() {
   };
 
   const removeAll = () => {
+    const answer = window.confirm("정말로 모든 소환사를 제거하시겠습니까?");
+    if (!answer) return;
     setUserMap({});
     setPlayerQueue({});
     setTeam1Players({});
@@ -443,8 +530,21 @@ function App() {
     onUpdatePlayer: onSearch,
     onPlayerDragStart: onPlayerDragStart,
     onPlayerDragEnd: onPlayerDragEnd,
-    onPlayerRightClick: onPlayerRightClick,
+    onMovePlayerToQueue: onMovePlayerToQueue,
   };
+
+  // TODO :: delete later (after line select)
+  const playerSorter = useCallback(
+    (a, b) => {
+      const userA = userMap[a];
+      const userB = userMap[b];
+      if (userA == null || userB == null) return 0;
+      const strengthA = userA.getRepresentativeStrength();
+      const strengthB = userB.getRepresentativeStrength();
+      return strengthB - strengthA;
+    },
+    [userMap]
+  );
 
   // console.log(userMap);
 
@@ -453,7 +553,7 @@ function App() {
       <div className="main-content">
         <header></header>
         <div className="title">LOL 사용자 설정 게임 팀 구성 {PackageJson.version}v</div>
-        <div className="description">
+        {/* <div className="description">
           본 서비스는 리그오브레전드의 사용자 설정 게임에서 팀 인원 분배를 도와주는 툴 및 기능을 제공합니다.
           <br />
           사용자 설정 게임은 2명 이상의 플레이어들이 팀을 구성하여 게임을 진행하는 방식으로,
@@ -463,11 +563,11 @@ function App() {
           이러한 과정은 여러가지 방법을 통해 진행되나 이는 번거롭고 시간이 많이 소요되는 작업입니다.
           <br />본 서비스는 이러한 번거로움을 줄이고자 여러 기능을 제공합니다.{" "}
           <span style={{ color: "#5080F050", fontWeight: "bold" }}>by shyunku</span>
-        </div>
+        </div> */}
         <div className="description additional">
           하단의 소환사 검색창에 소환사명 입력 후 엔터를 누르면 대기열에 추가됩니다.
           <br />
-          대기열에 추가된 소환사나 팀애 배치된 소환사는 드래그 앤 드롭을 통해 팀 또는 대기열에 재배치할 수 있습니다.
+          대기열에 추가된 소환사나 팀에 배치된 소환사는 드래그 앤 드롭을 통해 팀 또는 대기열에 재배치할 수 있습니다.
         </div>
         <div className="player-searcher" style={{ visibility: isReady ? "visible" : "hidden" }}>
           <input
@@ -489,11 +589,17 @@ function App() {
             </div>
             <div className="name">최적의 조합</div>
           </div>
-          <div className="function" onClick={combine10Players}>
+          <div className="function" onClick={combineAllPlayers}>
             <div className="icon">
               <IoArrowUp />
             </div>
-            <div className="name">10명 구성</div>
+            <div className="name">모두 올리기</div>
+          </div>
+          <div className="function" onClick={moveAllToQueue}>
+            <div className="icon">
+              <IoArrowDown />
+            </div>
+            <div className="name">전부 대기열로 이동</div>
           </div>
           <div className="function" onClick={swapTeams}>
             <div className="icon">
@@ -507,11 +613,11 @@ function App() {
             </div>
             <div className="name">소환사 섞기</div>
           </div>
-          <div className="function" onClick={moveAllToQueue}>
+          <div className="function" onClick={initAllExTier}>
             <div className="icon">
-              <IoArrowDown />
+              <IoReturnDownBack />
             </div>
-            <div className="name">전부 대기열로 이동</div>
+            <div className="name">지정 랭크 초기화</div>
           </div>
           <div className="function negative" onClick={removeAll}>
             <div className="icon">
@@ -519,6 +625,13 @@ function App() {
             </div>
             <div className="name">전부 제거</div>
           </div>
+        </div>
+        <div className="segment" />
+        <div className="composition-info">
+          <div className="distribution">
+            {Object.keys(team1players).length}명 vs {Object.keys(team2players).length}명
+          </div>
+          <div className="avg-diff">± {Math.abs(team1Strength - team2Strength).toFixed(0)} LP</div>
         </div>
         <div className="team-composition">
           <div
@@ -532,16 +645,18 @@ function App() {
               <div className="team-title">팀 1</div>
               {team1TierRank?.tier != null && (
                 <div className={"team-strength tier " + team1TierRank?.tier?.toLowerCase?.()}>
-                  평균 {tierRankKoreanString(team1TierRank?.tier, team1TierRank?.rank)}
+                  평균 {tierRankKoreanString(team1TierRank?.tier, team1TierRank?.rank, team1TierRank?.lp)}
                 </div>
               )}
+              <div className="team-avg-strength">{team1Strength.toFixed(0)} LP</div>
             </div>
             <div className="team-members">
               <div className="filter">팀 1에 추가</div>
               {Object.keys(team1players)
                 .filter((e) => userMap[e] != null)
+                // .sort(playerSorter)
                 .map((e, ind) => (
-                  <Player key={ind} user={userMap[e] ?? null} team={1} {...playerProps} />
+                  <PlayerCard key={ind} user={userMap[e] ?? null} team={1} {...playerProps} />
                 ))}
             </div>
           </div>
@@ -556,27 +671,31 @@ function App() {
               <div className="team-title">팀 2</div>
               {team2TierRank?.tier != null && (
                 <div className={"team-strength tier " + team2TierRank?.tier?.toLowerCase?.()}>
-                  평균 {tierRankKoreanString(team2TierRank?.tier, team2TierRank?.rank)}
+                  평균 {tierRankKoreanString(team2TierRank?.tier, team2TierRank?.rank, team2TierRank?.lp)}
                 </div>
               )}
+              <div className="team-avg-strength">{team2Strength.toFixed(0)} LP</div>
             </div>
             <div className="team-members">
               <div className="filter">팀 2에 추가</div>
               {Object.keys(team2players)
                 .filter((e) => userMap[e] != null)
+                // .sort(playerSorter)
                 .map((e, ind) => (
-                  <Player key={ind} user={userMap[e] ?? null} team={2} {...playerProps} />
+                  <PlayerCard key={ind} user={userMap[e] ?? null} team={2} {...playerProps} />
                 ))}
             </div>
           </div>
         </div>
+        <div className="segment" />
         <div className="player-queue">
           <div className="player-queue-title">대기열</div>
           <div className="player-queue-members">
             {Object.keys(playerQueue)
               .filter((e) => userMap[e] != null)
+              .sort(playerSorter)
               .map((e, ind) => (
-                <Player key={ind} user={userMap[e] ?? null} {...playerProps} />
+                <PlayerCard key={ind} user={userMap[e] ?? null} {...playerProps} />
               ))}
           </div>
         </div>
@@ -584,140 +703,5 @@ function App() {
     </div>
   );
 }
-
-const Player = ({
-  user,
-  team,
-  userMap,
-  setUserMap,
-  ddragonURL,
-  championMap,
-  onRemovePlayer,
-  onMovePlayer,
-  onUpdatePlayer,
-  onPlayerDragStart,
-  onPlayerDragEnd,
-  onPlayerRightClick,
-}) => {
-  const profileImageURL = useMemo(
-    () => `${ddragonURL}/img/profileicon/${user?.profileIconId}.png`,
-    [user?.profileIconId, ddragonURL]
-  );
-
-  const [p, setP] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setP((prev) => prev + 1);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const isAllTierVisible = useMemo(() => {
-    return user?.ex_tier != null && user?.sr_tier != null && user?.fr_tier != null;
-  }, [user?.ex_tier, user?.sr_tier, user?.fr_tier]);
-
-  const setExTier = () => {
-    if (userMap[user?.name] == null) return;
-    const input = prompt("지정 티어를 입력하세요. (예: Diamond 1)");
-    if (input == null) return;
-    try {
-      if (input === "") {
-        setUserMap((prev) => {
-          const newMap = { ...prev };
-          newMap[user?.name] = newMap[user?.name] ?? new RiotUser(user?.name);
-          newMap[user?.name].ex_tier = null;
-          return newMap;
-        });
-      } else {
-        const [tierRaw, rankRaw] = input.split(" ");
-        let tier = tierRaw.toUpperCase();
-        let rank = numberToRank(parseInt(rankRaw));
-        if (rank === "") throw new Error();
-        const newTier = new Tier(tier, rank, 0, 0, 0);
-
-        setUserMap((prev) => {
-          const newMap = { ...prev };
-          newMap[user?.name] = newMap[user?.name] ?? new RiotUser(user?.name);
-          newMap[user?.name].ex_tier = newTier;
-          return newMap;
-        });
-      }
-    } catch (err) {
-      toast.error("잘못된 입력입니다.");
-    }
-  };
-
-  return (
-    <div
-      className="team-member player"
-      draggable={true}
-      onDragStart={(e) => onPlayerDragStart(e, user?.name)}
-      onDragEnd={onPlayerDragEnd}
-      onContextMenu={(e) => onPlayerRightClick(e, user?.name)}
-      onClick={setExTier}
-    >
-      <div className="team-member-profile-image">
-        <img src={profileImageURL}></img>
-        <div className="team-member-level">{user?.summonerLevel}</div>
-      </div>
-      {/* {user?.getRepresentativeStrength()} */}
-      <div className="team-member-detail">
-        <div className="team-member-detail-group">
-          <div className="team-member-name">{user?.name}</div>
-          <div className="team-member-update-time">{toRelativeTime(user?.lastUpdateTime)}</div>
-        </div>
-        <div className="team-member-ranks">
-          {user?.ex_tier != null && (
-            <div className={"team-member-rank tier " + user?.ex_tier?.tier?.toLowerCase()}>
-              <div className="team-member-rank-title">지정</div>
-              <div className="team-member-rank-tier">{user?.ex_tier?.getTierRankKoreanString()}</div>
-            </div>
-          )}
-          {user?.sr_tier != null && (
-            <div className={"team-member-rank tier " + user?.sr_tier?.tier?.toLowerCase()}>
-              <div className="team-member-rank-title">솔랭</div>
-              <div className="team-member-rank-tier">{user?.sr_tier?.getTierRankKoreanString()}</div>
-            </div>
-          )}
-          {user?.fr_tier != null && !isAllTierVisible && (
-            <div className={"team-member-rank tier " + user?.fr_tier?.tier?.toLowerCase()}>
-              <div className="team-member-rank-title">자랭</div>
-              <div className="team-member-rank-tier">{user?.fr_tier?.getTierRankKoreanString()}</div>
-            </div>
-          )}
-          {/* <div className="team-member-rank">
-            <div className="team-member-rank-title">탑레</div>
-            <div className="team-member-rank-tier">마스터</div>
-          </div> */}
-        </div>
-      </div>
-      <div className="masteries">
-        {user?.masteries?.map((e, ind) => {
-          const champion = championMap[e.championId];
-          const championEngName = champion?.id ?? "unknown";
-          const championName = champion?.name ?? "unknown";
-          return (
-            <div className={"mastery " + "level-" + e?.championLevel + (ind === 0 ? " best" : "")} key={ind}>
-              <img src={`${ddragonURL}/img/champion/${championEngName}.png`} />
-              <div className="mastery-point">{masteryKoreanPoints(e.championPoints)}</div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="tail">
-        <div className="remove-icon tail-icon" onClick={(e) => onRemovePlayer(user?.name)}>
-          <IoRemoveCircle />
-        </div>
-        <div className="move-icon tail-icon" onClick={(e) => onMovePlayer(user?.name, team)}>
-          {team === 1 ? <IoArrowForward /> : team === 2 && <IoArrowBack />}
-        </div>
-        <div className="update-icon tail-icon" onClick={(e) => onUpdatePlayer(user?.name)}>
-          <IoRefresh />
-        </div>
-      </div>
-    </div>
-  );
-};
 
 export default App;
